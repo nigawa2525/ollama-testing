@@ -1,0 +1,38 @@
+{
+  "name": "ollama-testing",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "verify-yahoo": "playwright test verify-yahoo.spec.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nigawa2525/ollama-testing.git"
+  },
+  "keywords": [
+    "playwright",
+    "ollama",
+    "llm",
+    "vision",
+    "image-recognition",
+    "ai-testing",
+    "e2e-testing",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nigawa2525/ollama-testing/issues"
+  },
+  "homepage": "https://github.com/nigawa2525/ollama-testing#readme",
+  "description": "LLMによる画像判定のサンプル - Playwright + Ollamaを使用したAI検証テスト",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.1",
+    "cheerio": "^1.1.2",
+    "ollama": "^0.6.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
