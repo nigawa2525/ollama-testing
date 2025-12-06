@@ -6,8 +6,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './',
-  /* テストの最大実行時間（AI処理に時間がかかるため5分に設定） */
-  timeout: 5 * 60 * 1000,
+  /* テストの最大実行時間（AI処理に時間がかかるため3分に設定） */
+  timeout: 3 * 60 * 1000,
   expect: {
     /* アサーションのタイムアウト */
     timeout: 5000
@@ -16,8 +16,8 @@ export default defineConfig({
   fullyParallel: false,
   /* CIで失敗した場合にリトライしない */
   forbidOnly: !!process.env.CI,
-  /* CIでのみ失敗したテストをリトライ */
-  retries: process.env.CI ? 2 : 0,
+  /* 失敗したテストをリトライ（Ollamaの動作が不安定な場合に備えて） */
+  retries: process.env.CI ? 2 : 1,
   /* 並列実行するワーカー数 */
   workers: process.env.CI ? 1 : 1,
   /* 使用するレポーター */
