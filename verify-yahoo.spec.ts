@@ -106,17 +106,70 @@ test('Yahoo! JAPANのトップページをAIで検証', async ({ page }) => {
   const prompt = `
     あなたはWebサイトの品質保証(QA)の専門家です。
     提供された「スクリーンショット」と「HTML構造」をもとに、
-    Yahoo! JAPANのトップページが正常に表示されているか検証してください。
+    Yahoo! JAPANのトップページを「定量評価」と「定性評価」の2つの観点から検証してください。
     
-    ## チェックポイント:
-    1. **検索バー**: 画面上部に目立つ検索窓が存在するか。
-    2. **ロゴ**: "Yahoo! JAPAN"のロゴが表示されているか。
-    3. **ニュース**: メインエリアにニュースのトピックス一覧が表示されているか。
-    4. **レイアウト**: 画面が真っ白だったり、要素が大きく崩れて重なったりしていないか。
+    ## 1. 定量評価（Quantitative）：事実のチェック
+    HTMLデータに基づき、要素の存在の有無や形式の正確さを確認してください。
     
-    ## 回答フォーマット:
-    結果: [PASS] または [FAIL]
-    理由: (簡潔な説明)
+    ### 要素の存在:
+    - **検索窓**: 画面上部に検索窓が視覚的に存在するか
+    - **ロゴ**: "Yahoo! JAPAN"のロゴが表示されているか
+    - **ニュース**: メインエリアにニュースのトピックス一覧が表示されているか
+    
+    ### 禁止事項:
+    - **画像読み込みエラー**: 画像が読み込めずエラー表示されていないか
+    - **開発者向けエラーコード**: 開発者向けのエラーメッセージやデバッグ情報が表示されていないか
+    
+    ## 2. 定性評価（Qualitative）：UX・感覚のチェック
+    スクリーンショット（画像データ）を基に、人間のQAエンジニアに近い判断をしてください。
+    
+    ### レイアウト:
+    - **要素の重なり**: 要素が重なっていないか
+    - **余白**: 余白が不自然ではないか
+    
+    ### 視認性:
+    - **コントラスト**: 文字と背景のコントラストは読みやすいか
+    
+    ### トーン＆マナー:
+    - **エラーメッセージ**: エラーメッセージは丁寧な表現になっているか（エラーがある場合）
+    
+    ## 重要: 回答フォーマット
+    必ず以下のJSON形式のみで回答してください。他の説明は不要です。
+    
+    {
+      "result": "PASS" | "FAIL",
+      "quantitative": {
+        "searchBar": boolean,
+        "logo": boolean,
+        "news": boolean,
+        "imageErrors": boolean,
+        "developerErrors": boolean
+      },
+      "qualitative": {
+        "layout": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "readability": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "toneAndManner": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD"
+      },
+      "reason": "string"
+    }
+    
+    例:
+    {
+      "result": "PASS",
+      "quantitative": {
+        "searchBar": true,
+        "logo": true,
+        "news": true,
+        "imageErrors": false,
+        "developerErrors": false
+      },
+      "qualitative": {
+        "layout": "GOOD",
+        "readability": "GOOD",
+        "toneAndManner": "GOOD"
+      },
+      "reason": "すべての定量評価項目をクリアし、定性評価も良好です。"
+    }
   `;
   
   const response = await callOllamaWithRetry(
@@ -143,9 +196,67 @@ test('Yahoo! JAPANのトップページをAIで検証', async ({ page }) => {
   console.log(response.message.content);
   console.log('=============================================\n');
   
-  // 検証結果をチェック
-  const result = response.message.content;
-  const isPass = result.includes('[PASS]');
+  // 検証結果をチェック（JSON形式をパース）
+  const content = response.message.content;
+  let isPass = false;
+  let parsedResult: {
+    result: string;
+    quantitative?: {
+      searchBar?: boolean;
+      logo?: boolean;
+      news?: boolean;
+      imageErrors?: boolean;
+      developerErrors?: boolean;
+    };
+    qualitative?: {
+      layout?: string;
+      readability?: string;
+      toneAndManner?: string;
+    };
+    reason?: string;
+  } | null = null;
+  
+  try {
+    // JSON形式のレスポンスを抽出（コードブロックや余分なテキストを除去）
+    const jsonMatch = content.match(/\{[\s\S]*"result"[\s\S]*\}/);
+    if (jsonMatch) {
+      parsedResult = JSON.parse(jsonMatch[0]);
+      if (parsedResult) {
+        isPass = parsedResult.result === 'PASS';
+        console.log(`\n解析結果: ${parsedResult.result}`);
+        
+        // 定量評価の結果を表示
+        if (parsedResult.quantitative) {
+          console.log('\n【定量評価】');
+          console.log(`  検索窓: ${parsedResult.quantitative.searchBar ? '✓' : '✗'}`);
+          console.log(`  ロゴ: ${parsedResult.quantitative.logo ? '✓' : '✗'}`);
+          console.log(`  ニュース: ${parsedResult.quantitative.news ? '✓' : '✗'}`);
+          console.log(`  画像エラー: ${parsedResult.quantitative.imageErrors ? '✗ あり' : '✓ なし'}`);
+          console.log(`  開発者エラー: ${parsedResult.quantitative.developerErrors ? '✗ あり' : '✓ なし'}`);
+        }
+        
+        // 定性評価の結果を表示
+        if (parsedResult.qualitative) {
+          console.log('\n【定性評価】');
+          console.log(`  レイアウト: ${parsedResult.qualitative.layout || 'N/A'}`);
+          console.log(`  視認性: ${parsedResult.qualitative.readability || 'N/A'}`);
+          console.log(`  トーン＆マナー: ${parsedResult.qualitative.toneAndManner || 'N/A'}`);
+        }
+        
+        console.log(`\n理由: ${parsedResult.reason || 'N/A'}`);
+      } else {
+        isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+      }
+    } else {
+      // JSONが見つからない場合、従来の形式をフォールバック
+      console.warn('JSON形式が見つかりません。従来の形式で解析します。');
+      isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+    }
+  } catch (error) {
+    console.error('JSON解析エラー:', error);
+    // エラー時は従来の形式でフォールバック
+    isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+  }
   
   // テスト結果をアサート
   expect(isPass).toBe(true);
@@ -178,18 +289,34 @@ test('Yahoo! JAPANページで天気情報ウィジェットが表示されて�
     提供された「スクリーンショット」と「HTML構造」をもとに、
     Yahoo! JAPANのトップページに「天気情報ウィジェット」が明確に表示されているか検証してください。
     
-    ## チェックポイント:
-    1. **天気情報ウィジェット**: 画面上部またはメインエリアに、現在の天気（気温、天候アイコンなど）を表示するウィジェットが存在するか。
-    2. **天気アイコン**: 天候を表すアイコン（晴れ、曇り、雨など）が表示されているか。
-    3. **気温表示**: 現在の気温が数値で表示されているか。
+    ## 1. 定量評価（Quantitative）：事実のチェック
+    HTMLデータとスクリーンショットに基づき、要素の存在を確認してください。
     
-    ## 注意:
-    天気情報ウィジェットは通常、Yahoo! JAPANのトップページの特定の位置に表示されますが、
-    レイアウトやコンテンツの変更により表示されない場合があります。
+    ### 要素の存在:
+    - **天気情報ウィジェット**: 画面上部またはメインエリアに、現在の天気（気温、天候アイコンなど）を表示するウィジェットが存在するか
+    - **天気アイコン**: 天候を表すアイコン（晴れ、曇り、雨など）が表示されているか
+    - **気温表示**: 現在の気温が数値で表示されているか
     
-    ## 回答フォーマット:
-    結果: [PASS] または [FAIL]
-    理由: (簡潔な説明)
+    ## 2. 定性評価（Qualitative）：UX・感覚のチェック
+    スクリーンショットを基に、レイアウト、視認性、トーン＆マナーを評価してください。
+    
+    ## 重要: 回答フォーマット
+    必ず以下のJSON形式のみで回答してください。他の説明は不要です。
+    
+    {
+      "result": "PASS" | "FAIL",
+      "quantitative": {
+        "weatherWidget": boolean,
+        "weatherIcon": boolean,
+        "temperature": boolean
+      },
+      "qualitative": {
+        "layout": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "readability": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "toneAndManner": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD"
+      },
+      "reason": "string"
+    }
   `;
   
   const response = await callOllamaWithRetry(
@@ -216,12 +343,34 @@ test('Yahoo! JAPANページで天気情報ウィジェットが表示されて�
   console.log(response.message.content);
   console.log('=============================================\n');
   
-  // 検証結果をチェック（このテストは失敗することを期待）
-  const result = response.message.content;
-  const isPass = result.includes('[PASS]');
+  // 検証結果をチェック（JSON形式をパース、このテストは失敗することを期待）
+  const content = response.message.content;
+  let isPass = false;
+  
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*"result"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsedResult = JSON.parse(jsonMatch[0]);
+      isPass = parsedResult.result === 'PASS';
+      console.log(`\n解析結果: ${parsedResult.result}`);
+      if (parsedResult.quantitative) {
+        console.log('\n【定量評価】');
+        console.log(JSON.stringify(parsedResult.quantitative, null, 2));
+      }
+      if (parsedResult.qualitative) {
+        console.log('\n【定性評価】');
+        console.log(JSON.stringify(parsedResult.qualitative, null, 2));
+      }
+      console.log(`\n理由: ${parsedResult.reason || 'N/A'}`);
+    } else {
+      isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+    }
+  } catch (error) {
+    isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+  }
   
   // このテストは失敗することを期待（天気情報ウィジェットが表示されていない可能性が高いため）
-  expect(isPass).toBe(false); // AIが[FAIL]を返すことを期待
+  expect(isPass).toBe(false); // AIがFAILを返すことを期待
 });
 
 test('Yahoo! JAPANページで株価情報セクションが表示されているか検証（失敗ケース）', async ({ page }) => {
@@ -251,18 +400,34 @@ test('Yahoo! JAPANページで株価情報セクションが表示されてい�
     提供された「スクリーンショット」と「HTML構造」をもとに、
     Yahoo! JAPANのトップページに「株価情報セクション」が明確に表示されているか検証してください。
     
-    ## チェックポイント:
-    1. **株価情報セクション**: メインエリアに、日経平均やTOPIXなどの株価指数を表示するセクションが存在するか。
-    2. **株価数値**: 株価の数値（例：38,000円、2,500ポイントなど）が表示されているか。
-    3. **株価チャート**: 株価の変動を示すチャートやグラフが表示されているか。
+    ## 1. 定量評価（Quantitative）：事実のチェック
+    HTMLデータとスクリーンショットに基づき、要素の存在を確認してください。
     
-    ## 注意:
-    株価情報セクションは通常、Yahoo! JAPANのトップページの特定の位置に表示されますが、
-    レイアウトやコンテンツの変更により表示されない場合があります。
+    ### 要素の存在:
+    - **株価情報セクション**: メインエリアに、日経平均やTOPIXなどの株価指数を表示するセクションが存在するか
+    - **株価数値**: 株価の数値（例：38,000円、2,500ポイントなど）が表示されているか
+    - **株価チャート**: 株価の変動を示すチャートやグラフが表示されているか
     
-    ## 回答フォーマット:
-    結果: [PASS] または [FAIL]
-    理由: (簡潔な説明)
+    ## 2. 定性評価（Qualitative）：UX・感覚のチェック
+    スクリーンショットを基に、レイアウト、視認性、トーン＆マナーを評価してください。
+    
+    ## 重要: 回答フォーマット
+    必ず以下のJSON形式のみで回答してください。他の説明は不要です。
+    
+    {
+      "result": "PASS" | "FAIL",
+      "quantitative": {
+        "stockSection": boolean,
+        "stockValue": boolean,
+        "stockChart": boolean
+      },
+      "qualitative": {
+        "layout": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "readability": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "toneAndManner": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD"
+      },
+      "reason": "string"
+    }
   `;
   
   const response = await callOllamaWithRetry(
@@ -289,12 +454,34 @@ test('Yahoo! JAPANページで株価情報セクションが表示されてい�
   console.log(response.message.content);
   console.log('=============================================\n');
   
-  // 検証結果をチェック（このテストは失敗することを期待）
-  const result = response.message.content;
-  const isPass = result.includes('[PASS]');
+  // 検証結果をチェック（JSON形式をパース、このテストは失敗することを期待）
+  const content = response.message.content;
+  let isPass = false;
+  
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*"result"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsedResult = JSON.parse(jsonMatch[0]);
+      isPass = parsedResult.result === 'PASS';
+      console.log(`\n解析結果: ${parsedResult.result}`);
+      if (parsedResult.quantitative) {
+        console.log('\n【定量評価】');
+        console.log(JSON.stringify(parsedResult.quantitative, null, 2));
+      }
+      if (parsedResult.qualitative) {
+        console.log('\n【定性評価】');
+        console.log(JSON.stringify(parsedResult.qualitative, null, 2));
+      }
+      console.log(`\n理由: ${parsedResult.reason || 'N/A'}`);
+    } else {
+      isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+    }
+  } catch (error) {
+    isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+  }
   
   // このテストは失敗することを期待（株価情報セクションが表示されていない可能性が高いため）
-  expect(isPass).toBe(false); // AIが[FAIL]を返すことを期待
+  expect(isPass).toBe(false); // AIがFAILを返すことを期待
 });
 
 test('Yahoo! JAPANページでスポーツニュースセクションが表示されているか検証（失敗ケース）', async ({ page }) => {
@@ -324,18 +511,38 @@ test('Yahoo! JAPANページでスポーツニュースセクションが表示�
     提供された「スクリーンショット」と「HTML構造」をもとに、
     Yahoo! JAPANのトップページの「最初に表示される画面（ビューポート）」に「スポーツニュースセクション」が明確に表示されているか検証してください。
     
-    ## チェックポイント:
-    1. **スポーツニュースセクション**: スクリーンショット内（最初に表示される画面）に、スポーツ関連のニュースを表示するセクションが存在するか。
-    2. **スポーツ記事**: 野球、サッカー、その他のスポーツに関する記事の見出しや画像が表示されているか。
-    3. **スポーツカテゴリ**: 「スポーツ」というカテゴリ名やタブが表示されているか。
+    ## 1. 定量評価（Quantitative）：事実のチェック
+    HTMLデータとスクリーンショットに基づき、要素の存在を確認してください。
+    
+    ### 要素の存在:
+    - **スポーツニュースセクション**: スクリーンショット内（最初に表示される画面）に、スポーツ関連のニュースを表示するセクションが存在するか
+    - **スポーツ記事**: 野球、サッカー、その他のスポーツに関する記事の見出しや画像が表示されているか
+    - **スポーツカテゴリ**: 「スポーツ」というカテゴリ名やタブが表示されているか
+    
+    ## 2. 定性評価（Qualitative）：UX・感覚のチェック
+    スクリーンショットを基に、レイアウト、視認性、トーン＆マナーを評価してください。
     
     ## 注意:
     スクリーンショットは最初に表示される画面（ビューポート）のみを撮影しています。
     スポーツニュースセクションが画面下部にある場合は、スクリーンショットに含まれない可能性があります。
     
-    ## 回答フォーマット:
-    結果: [PASS] または [FAIL]
-    理由: (簡潔な説明)
+    ## 重要: 回答フォーマット
+    必ず以下のJSON形式のみで回答してください。他の説明は不要です。
+    
+    {
+      "result": "PASS" | "FAIL",
+      "quantitative": {
+        "sportsSection": boolean,
+        "sportsArticle": boolean,
+        "sportsCategory": boolean
+      },
+      "qualitative": {
+        "layout": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "readability": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD",
+        "toneAndManner": "GOOD" | "NEEDS_IMPROVEMENT" | "BAD"
+      },
+      "reason": "string"
+    }
   `;
   
   const response = await callOllamaWithRetry(
@@ -362,11 +569,33 @@ test('Yahoo! JAPANページでスポーツニュースセクションが表示�
   console.log(response.message.content);
   console.log('=============================================\n');
   
-  // 検証結果をチェック（このテストは失敗することを期待）
-  const result = response.message.content;
-  const isPass = result.includes('[PASS]');
+  // 検証結果をチェック（JSON形式をパース、このテストは失敗することを期待）
+  const content = response.message.content;
+  let isPass = false;
+  
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*"result"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsedResult = JSON.parse(jsonMatch[0]);
+      isPass = parsedResult.result === 'PASS';
+      console.log(`\n解析結果: ${parsedResult.result}`);
+      if (parsedResult.quantitative) {
+        console.log('\n【定量評価】');
+        console.log(JSON.stringify(parsedResult.quantitative, null, 2));
+      }
+      if (parsedResult.qualitative) {
+        console.log('\n【定性評価】');
+        console.log(JSON.stringify(parsedResult.qualitative, null, 2));
+      }
+      console.log(`\n理由: ${parsedResult.reason || 'N/A'}`);
+    } else {
+      isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+    }
+  } catch (error) {
+    isPass = content.includes('[PASS]') || content.includes('"result": "PASS"');
+  }
   
   // このテストは失敗することを期待（スポーツニュースセクションが最初のビューポートに表示されていない可能性が高いため）
-  expect(isPass).toBe(false); // AIが[FAIL]を返すことを期待
+  expect(isPass).toBe(false); // AIがFAILを返すことを期待
 });
 
